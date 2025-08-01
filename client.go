@@ -295,8 +295,8 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	return presignedInfo, nil
 }
 
-// getViewPresignedURL 获取访问文件预签名URL
-func (c *Client) getViewPresignedURL(ctx context.Context, filePath string, param *url.Values) (string, error) {
+// GetViewPresignedURL 获取访问文件预签名URL
+func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values) (string, error) {
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
@@ -320,7 +320,7 @@ func (c *Client) getViewPresignedURL(ctx context.Context, filePath string, param
 		Header:     &http.Header{},
 		SignMerged: true,
 	}
-	opts.Query.Add("x-cos-security-token", credentials.SessionToken)
+	opts.Query.Set("x-cos-security-token", credentials.SessionToken)
 
 	var secretID = credentials.TmpSecretID
 	var secretKey = credentials.TmpSecretKey
@@ -354,7 +354,7 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string
 	param.Add("htmlhorizontal", "100")
 	param.Add("htmlvertical", "100")
 
-	fileURL, err := c.getViewPresignedURL(ctx, filePath, param)
+	fileURL, err := c.GetViewPresignedURL(ctx, filePath, param)
 	if err != nil {
 		return "", err
 	}
@@ -363,7 +363,7 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string
 
 // GetFileURL 获取文件访问URL，注意此方法返回的COS域名地址，非CDN域名地址
 func (c *Client) GetFileURL(ctx context.Context, filePath string) (string, error) {
-	fileURL, err := c.getViewPresignedURL(ctx, filePath, &url.Values{})
+	fileURL, err := c.GetViewPresignedURL(ctx, filePath, &url.Values{})
 	if err != nil {
 		return "", err
 	}
