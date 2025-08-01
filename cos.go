@@ -18,30 +18,21 @@ import (
 type Client struct {
 	secretID     string
 	secretKey    string
-	baseURL      *cos.BaseURL
 	appID        string
 	bucket       string
 	region       string
+	baseURL      *cos.BaseURL
 	scenes       map[SceneType]*Scene
 	contentTypes map[string]string
 }
 
-func New(secretID, secretKey, bucketURL string) *Client {
+func New(secretID, secretKey, appID, bucket, region, bucketURL string) *Client {
 	var nClient = &Client{}
 	nClient.secretID = secretID
 	nClient.secretKey = secretKey
-
-	// 解析 URL 中的bucket、region和appID
-	var host = strings.TrimPrefix(bucketURL, "https://")
-	var fragments = strings.Split(host, ".")
-	if len(fragments) > 2 {
-		nClient.bucket = fragments[0]
-		nClient.region = fragments[2]
-		fragments = strings.Split(nClient.bucket, "-")
-		if len(fragments) > 2 {
-			nClient.appID = fragments[2]
-		}
-	}
+	nClient.appID = appID
+	nClient.bucket = bucket
+	nClient.region = region
 
 	nBucketURL, err := url.Parse(bucketURL)
 	if err != nil {
