@@ -1,0 +1,371 @@
+package txcos
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/tencentyun/cos-go-sdk-v5"
+	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type Client struct {
+	secretID     string
+	secretKey    string
+	baseURL      *cos.BaseURL
+	appID        string
+	bucket       string
+	region       string
+	scenes       map[SceneType]*Scene
+	contentTypes map[string]string
+}
+
+func New(secretID, secretKey, bucketURL string) *Client {
+	var nClient = &Client{}
+	nClient.secretID = secretID
+	nClient.secretKey = secretKey
+
+	// 解析 URL 中的bucket、region和appID
+	var host = strings.TrimPrefix(bucketURL, "https://")
+	var fragments = strings.Split(host, ".")
+	if len(fragments) > 2 {
+		nClient.bucket = fragments[0]
+		nClient.region = fragments[2]
+		fragments = strings.Split(nClient.bucket, "-")
+		if len(fragments) > 2 {
+			nClient.appID = fragments[2]
+		}
+	}
+
+	nBucketURL, err := url.Parse(bucketURL)
+	if err != nil {
+		panic(err)
+	}
+	nClient.baseURL = &cos.BaseURL{BucketURL: nBucketURL}
+
+	nClient.scenes = make(map[SceneType]*Scene)
+	nClient.contentTypes = make(map[string]string)
+	return nClient
+}
+
+func (c *Client) SecretID() string {
+	return c.secretID
+}
+
+func (c *Client) SecretKey() string {
+	return c.secretKey
+}
+
+func (c *Client) BaseURL() *cos.BaseURL {
+	return c.baseURL
+}
+
+func (c *Client) AppID() string {
+	return c.appID
+}
+
+func (c *Client) Bucket() string {
+	return c.bucket
+}
+
+func (c *Client) Region() string {
+	return c.region
+}
+
+func (c *Client) ContentType(ext string) string {
+	return c.contentTypes[ext]
+}
+
+func (c *Client) AddScene(scene *Scene) {
+	if scene != nil && scene.Path != "" && len(scene.FileExts) > 0 {
+		c.scenes[scene.SceneType] = scene
+	}
+}
+
+func (c *Client) AddContentType(fileType string, contentType string) {
+	if fileType != "" && contentType != "" {
+		c.contentTypes[fileType] = contentType
+	}
+}
+
+func (c *Client) GetUploadCredentialPolicyStatement(ctx context.Context, resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
+	if len(resources) < 1 {
+		return nil, errors.New("资源路径不能为空")
+	}
+	if len(contentTypes) < 1 {
+		return nil, errors.New("ContentType 不能为空")
+	}
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucket)
+
+	var resourceList = make([]string, 0, len(resources))
+	for _, resource := range resources {
+		resourceList = append(resourceList, filepath.Join(base, resource))
+	}
+
+	statements = []sts.CredentialPolicyStatement{
+		{
+			Action: []string{
+				// 简单上传
+				"name/cos:PostObject",
+				"name/cos:PutObject",
+				// 分片上传
+				"name/cos:InitiateMultipartUpload",
+				"name/cos:ListMultipartUploads",
+				"name/cos:ListParts",
+				"name/cos:UploadPart",
+				"name/cos:CompleteMultipartUpload",
+				"name/cos:AbortMultipartUpload",
+			},
+			Effect:   "allow",
+			Resource: resourceList,
+			Condition: map[string]map[string]interface{}{
+				"string_equal_ignore_case": {
+					"cos:content-type": contentTypes,
+				},
+			},
+		},
+	}
+	return statements, nil
+}
+
+func (c *Client) GetViewCredentialPolicyStatement(ctx context.Context, resources []string) (statements []sts.CredentialPolicyStatement, err error) {
+	if len(resources) < 1 {
+		return nil, errors.New("资源路径不能为空")
+	}
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucket)
+
+	var resourceList = make([]string, 0, len(resources))
+	for _, resource := range resources {
+		resourceList = append(resourceList, filepath.Join(base, resource))
+	}
+	statements = []sts.CredentialPolicyStatement{
+		{
+			Action:   []string{"name/cos:GetObject"},
+			Effect:   "allow",
+			Resource: resourceList,
+		},
+	}
+	return statements, nil
+}
+
+func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, contentTypes []string) (credentials *sts.Credentials, err error) {
+	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
+	credentialPolicyStatementList, err := c.GetUploadCredentialPolicyStatement(ctx, resources, contentTypes)
+	if err != nil {
+		return nil, err
+	}
+	credentialOpts := &sts.CredentialOptions{
+		DurationSeconds: int64(time.Hour.Seconds()),
+		Region:          c.region,
+		Policy: &sts.CredentialPolicy{
+			Statement: credentialPolicyStatementList,
+		},
+	}
+	credential, err := stsClient.GetCredential(credentialOpts)
+	if err != nil {
+		return nil, err
+	}
+	if credential == nil || credential.Credentials == nil {
+		return nil, errors.New("获取COS临时密钥异常")
+	}
+	return credential.Credentials, nil
+}
+
+func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string) (credentials *sts.Credentials, err error) {
+	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
+	credentialPolicyStatementList, err := c.GetViewCredentialPolicyStatement(ctx, resources)
+	if err != nil {
+		return nil, err
+	}
+	credentialOpts := &sts.CredentialOptions{
+		DurationSeconds: int64(time.Hour.Seconds()),
+		Region:          c.region,
+		Policy: &sts.CredentialPolicy{
+			Statement: credentialPolicyStatementList,
+		},
+	}
+	credential, err := stsClient.GetCredential(credentialOpts)
+	if err != nil {
+		return nil, err
+	}
+	if credential == nil || credential.Credentials == nil {
+		return nil, errors.New("获取COS临时密钥异常")
+	}
+	return credential.Credentials, nil
+}
+
+// BuildUploadFileInfo 构建待上传文件的COS路径及ContentType
+func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, filename string) (filePath, contentType string, err error) {
+	if filename == "" {
+		return "", "", errors.New("文件名不能为空")
+	}
+	var fileExt = filepath.Ext(filename)
+	if fileExt == "" {
+		return "", "", errors.New("文件后缀不能为空")
+	}
+	fileExt = strings.TrimPrefix(fileExt, ".")
+
+	// 获取文件场景
+	scene, ok := c.scenes[sceneType]
+	if !ok {
+		return "", "", errors.New("文件场景不存在")
+	}
+
+	// 验证是否为“文件场景”有效的文件类型
+	var supportExt = false
+	for _, ext := range scene.FileExts {
+		if fileExt == ext {
+			supportExt = true
+			break
+		}
+	}
+	if !supportExt {
+		return "", "", errors.New("不支持的文件类型")
+	}
+
+	// 获取文件的 Content-Type
+	contentType = c.ContentType(fileExt)
+	if contentType == "" {
+		return "", "", errors.New("未知的文件类型")
+	}
+
+	// 构建待上传文件的COS路径
+	filePath = filepath.Join("/", scene.Path, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String())), time.Now().UnixNano(), fileExt))
+
+	return filePath, contentType, nil
+}
+
+// GetUploadPresignedInfo 获取上传文件预签名URL
+func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string) (presignedInfo *PresignedInfo, err error) {
+	// 构建待上传文件的COS路径及ContentType
+	filePath, contentType, err := c.BuildUploadFileInfo(ctx, sceneType, filename)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取临时上传密钥
+	credentials, err := c.GetTmpUploadCredentials(ctx, []string{filePath}, []string{contentType})
+	if err != nil {
+		return nil, err
+	}
+
+	var opts = &cos.PresignedURLOptions{
+		Query:      &url.Values{},
+		Header:     &http.Header{},
+		SignMerged: true,
+	}
+	opts.Header.Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	opts.Header.Add("Content-Type", contentType)
+	opts.Query.Add("x-cos-security-token", credentials.SessionToken)
+
+	var secretID = credentials.TmpSecretID
+	var secretKey = credentials.TmpSecretKey
+
+	var cosClient = cos.NewClient(c.baseURL, &http.Client{
+		Transport: &cos.AuthorizationTransport{
+			SecretID:  secretID,
+			SecretKey: secretKey,
+		},
+	})
+
+	filePath = strings.ReplaceAll(filePath, "//", "/")
+	if strings.HasPrefix(filePath, "/") {
+		filePath = filePath[1:]
+	}
+
+	// 获取预签名 URL
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, filePath, secretID, secretKey, time.Hour, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	presignedInfo = &PresignedInfo{}
+	presignedInfo.UploadURL = presignedURL.String()
+	presignedInfo.FilePath = filePath
+	presignedInfo.Header = make(map[string]string)
+	for key := range *opts.Header {
+		presignedInfo.Header[key] = opts.Header.Get(key)
+	}
+	return presignedInfo, nil
+}
+
+// getViewPresignedURL 获取访问文件预签名URL
+func (c *Client) getViewPresignedURL(ctx context.Context, filePath string, param *url.Values) (string, error) {
+	if filePath == "" {
+		return "", errors.New("路径不能为空")
+	}
+	filePath = strings.ReplaceAll(filePath, "//", "/")
+	if strings.HasPrefix(filePath, "/") {
+		filePath = filePath[1:]
+	}
+
+	if param == nil {
+		param = &url.Values{}
+	}
+
+	// 获取临时访问密钥
+	credentials, err := c.GetTmpViewCredentials(ctx, []string{filePath})
+	if err != nil {
+		return "", err
+	}
+
+	var opts = &cos.PresignedURLOptions{
+		Query:      param,
+		Header:     &http.Header{},
+		SignMerged: true,
+	}
+	opts.Query.Add("x-cos-security-token", credentials.SessionToken)
+
+	var secretID = credentials.TmpSecretID
+	var secretKey = credentials.TmpSecretKey
+
+	var cosClient = cos.NewClient(c.baseURL, &http.Client{
+		Transport: &cos.AuthorizationTransport{
+			SecretID:  secretID,
+			SecretKey: secretKey,
+		},
+	})
+
+	// 获取预签名 URL
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretID, secretKey, time.Hour, opts)
+	if err != nil {
+		return "", err
+	}
+
+	return presignedURL.String(), nil
+}
+
+// GetPreviewFileURL 获取文件预览URL，注意此方法返回的COS域名地址，非CDN域名地址
+func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string, error) {
+	var param = &url.Values{}
+	param.Add("ci-process", "doc-preview")
+	param.Add("dstType", "html")
+	param.Add("copyable", "0")
+	param.Add("htmlwaterword", "")
+	param.Add("htmlfillstyle", "cmdiYSgxOTIsMTkyLDE5MiwwLjYp")
+	param.Add("htmlfront", "Ym9sZCAyMHB4IFNlcmlm")
+	param.Add("htmlrotate", "325")
+	param.Add("htmlhorizontal", "100")
+	param.Add("htmlvertical", "100")
+
+	fileURL, err := c.getViewPresignedURL(ctx, filePath, param)
+	if err != nil {
+		return "", err
+	}
+	return fileURL, nil
+}
+
+// GetFileURL 获取文件访问URL，注意此方法返回的COS域名地址，非CDN域名地址
+func (c *Client) GetFileURL(ctx context.Context, filePath string) (string, error) {
+	fileURL, err := c.getViewPresignedURL(ctx, filePath, &url.Values{})
+	if err != nil {
+		return "", err
+	}
+	return fileURL, nil
+}
