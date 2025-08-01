@@ -102,7 +102,6 @@ func (c *Client) GetUploadCredentialPolicyStatement(ctx context.Context, resourc
 		return nil, errors.New("ContentType 不能为空")
 	}
 	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucket)
-
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
 		resourceList = append(resourceList, filepath.Join(base, resource))
@@ -111,15 +110,21 @@ func (c *Client) GetUploadCredentialPolicyStatement(ctx context.Context, resourc
 	statements = []sts.CredentialPolicyStatement{
 		{
 			Action: []string{
-				// 简单上传
-				"name/cos:PostObject",
+				//简单上传操作
 				"name/cos:PutObject",
-				// 分片上传
+				//表单上传对象
+				"name/cos:PostObject",
+				//分块上传：初始化分块操作
 				"name/cos:InitiateMultipartUpload",
+				//分块上传：List 进行中的分块上传
 				"name/cos:ListMultipartUploads",
+				//分块上传：List 已上传分块操作
 				"name/cos:ListParts",
+				//分块上传：上传分块操作
 				"name/cos:UploadPart",
+				//分块上传：完成所有分块上传操作
 				"name/cos:CompleteMultipartUpload",
+				//取消分块上传操作
 				"name/cos:AbortMultipartUpload",
 			},
 			Effect:   "allow",
@@ -146,7 +151,10 @@ func (c *Client) GetViewCredentialPolicyStatement(ctx context.Context, resources
 	}
 	statements = []sts.CredentialPolicyStatement{
 		{
-			Action:   []string{"name/cos:GetObject"},
+			Action: []string{
+				//下载操作
+				"name/cos:GetObject",
+			},
 			Effect:   "allow",
 			Resource: resourceList,
 		},
