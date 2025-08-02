@@ -153,14 +153,14 @@ func (c *Client) GetViewCredentialPolicyStatement(ctx context.Context, resources
 	return statements, nil
 }
 
-func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, contentTypes []string) (credentials *sts.Credentials, err error) {
+func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
 	credentialPolicyStatementList, err := c.GetUploadCredentialPolicyStatement(ctx, resources, contentTypes)
 	if err != nil {
 		return nil, err
 	}
 	credentialOpts := &sts.CredentialOptions{
-		DurationSeconds: int64(time.Hour.Seconds()),
+		DurationSeconds: int64(expired.Seconds()),
 		Region:          c.region,
 		Policy: &sts.CredentialPolicy{
 			Statement: credentialPolicyStatementList,
@@ -176,14 +176,14 @@ func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, content
 	return credential.Credentials, nil
 }
 
-func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string) (credentials *sts.Credentials, err error) {
+func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
 	credentialPolicyStatementList, err := c.GetViewCredentialPolicyStatement(ctx, resources)
 	if err != nil {
 		return nil, err
 	}
 	credentialOpts := &sts.CredentialOptions{
-		DurationSeconds: int64(time.Hour.Seconds()),
+		DurationSeconds: int64(expired.Seconds()),
 		Region:          c.region,
 		Policy: &sts.CredentialPolicy{
 			Statement: credentialPolicyStatementList,
@@ -241,7 +241,7 @@ func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, f
 }
 
 // GetUploadPresignedInfo 获取上传文件预签名URL
-func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string) (presignedInfo *PresignedInfo, err error) {
+func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string, expired time.Duration) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
 	filePath, contentType, err := c.BuildUploadFileInfo(ctx, sceneType, filename)
 	if err != nil {
@@ -249,7 +249,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	}
 
 	// 获取临时上传密钥
-	credentials, err := c.GetTmpUploadCredentials(ctx, []string{filePath}, []string{contentType})
+	credentials, err := c.GetTmpUploadCredentials(ctx, []string{filePath}, []string{contentType}, expired)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	}
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, filePath, secretID, secretKey, time.Hour, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, filePath, secretID, secretKey, expired, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 }
 
 // GetViewPresignedURL 获取访问文件预签名URL
-func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values) (string, error) {
+func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
@@ -309,7 +309,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	}
 
 	// 获取临时访问密钥
-	credentials, err := c.GetTmpViewCredentials(ctx, []string{filePath})
+	credentials, err := c.GetTmpViewCredentials(ctx, []string{filePath}, expired)
 	if err != nil {
 		return "", err
 	}
@@ -341,7 +341,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 }
 
 // GetPreviewFileURL 获取文件预览URL，注意此方法返回的COS域名地址，非CDN域名地址
-func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string, error) {
+func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string, expired time.Duration) (string, error) {
 	var param = &url.Values{}
 	param.Add("ci-process", "doc-preview")
 	param.Add("dstType", "html")
@@ -353,7 +353,7 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string
 	param.Add("htmlhorizontal", "100")
 	param.Add("htmlvertical", "100")
 
-	fileURL, err := c.GetViewPresignedURL(ctx, filePath, param)
+	fileURL, err := c.GetViewPresignedURL(ctx, filePath, param, expired)
 	if err != nil {
 		return "", err
 	}
@@ -361,8 +361,8 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string) (string
 }
 
 // GetFileURL 获取文件访问URL，注意此方法返回的COS域名地址，非CDN域名地址
-func (c *Client) GetFileURL(ctx context.Context, filePath string) (string, error) {
-	fileURL, err := c.GetViewPresignedURL(ctx, filePath, &url.Values{})
+func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.Duration) (string, error) {
+	fileURL, err := c.GetViewPresignedURL(ctx, filePath, &url.Values{}, expired)
 	if err != nil {
 		return "", err
 	}
