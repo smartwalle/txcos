@@ -200,7 +200,7 @@ func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string, 
 }
 
 // BuildUploadFileInfo 构建待上传文件的COS路径及ContentType
-func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, filename string) (filePath, contentType string, err error) {
+func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, filename string, paths ...string) (filePath, contentType string, err error) {
 	if filename == "" {
 		return "", "", errors.New("文件名不能为空")
 	}
@@ -235,15 +235,21 @@ func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, f
 	}
 
 	// 构建待上传文件的COS路径
-	filePath = filepath.Join("/", scene.Path, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), time.Now().UnixNano(), fileExt))
+	var newPaths = make([]string, 0, len(paths)+3)
+	newPaths = append(newPaths, "/")
+	newPaths = append(newPaths, scene.Path)
+	newPaths = append(newPaths, paths...)
+	newPaths = append(newPaths, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), time.Now().UnixNano(), fileExt))
+
+	filePath = filepath.Join(newPaths...)
 
 	return filePath, contentType, nil
 }
 
 // GetUploadPresignedInfo 获取上传文件预签名URL
-func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string, expired time.Duration) (presignedInfo *PresignedInfo, err error) {
+func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, err := c.BuildUploadFileInfo(ctx, sceneType, filename)
+	filePath, contentType, err := c.BuildUploadFileInfo(ctx, sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
