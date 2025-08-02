@@ -85,7 +85,7 @@ func (c *Client) AddContentType(fileType string, contentType string) {
 	}
 }
 
-func (c *Client) GetUploadCredentialPolicyStatement(ctx context.Context, resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
+func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
@@ -130,7 +130,7 @@ func (c *Client) GetUploadCredentialPolicyStatement(ctx context.Context, resourc
 	return statements, nil
 }
 
-func (c *Client) GetViewCredentialPolicyStatement(ctx context.Context, resources []string) (statements []sts.CredentialPolicyStatement, err error) {
+func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statements []sts.CredentialPolicyStatement, err error) {
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
@@ -153,9 +153,9 @@ func (c *Client) GetViewCredentialPolicyStatement(ctx context.Context, resources
 	return statements, nil
 }
 
-func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
+func (c *Client) GetTmpUploadCredentials(resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
-	credentialPolicyStatementList, err := c.GetUploadCredentialPolicyStatement(ctx, resources, contentTypes)
+	credentialPolicyStatementList, err := c.GetUploadCredentialPolicyStatement(resources, contentTypes)
 	if err != nil {
 		return nil, err
 	}
@@ -176,9 +176,9 @@ func (c *Client) GetTmpUploadCredentials(ctx context.Context, resources, content
 	return credential.Credentials, nil
 }
 
-func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
+func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
-	credentialPolicyStatementList, err := c.GetViewCredentialPolicyStatement(ctx, resources)
+	credentialPolicyStatementList, err := c.GetViewCredentialPolicyStatement(resources)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (c *Client) GetTmpViewCredentials(ctx context.Context, resources []string, 
 }
 
 // BuildUploadFileInfo 构建待上传文件的COS路径及ContentType
-func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, filename string, paths ...string) (filePath, contentType string, err error) {
+func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, err error) {
 	if filename == "" {
 		return "", "", errors.New("文件名不能为空")
 	}
@@ -249,13 +249,13 @@ func (c *Client) BuildUploadFileInfo(ctx context.Context, sceneType SceneType, f
 // GetUploadPresignedInfo 获取上传文件预签名URL
 func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, err := c.BuildUploadFileInfo(ctx, sceneType, filename, paths...)
+	filePath, contentType, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
 
 	// 获取临时上传密钥
-	credentials, err := c.GetTmpUploadCredentials(ctx, []string{filePath}, []string{contentType}, expired)
+	credentials, err := c.GetTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +315,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	}
 
 	// 获取临时访问密钥
-	credentials, err := c.GetTmpViewCredentials(ctx, []string{filePath}, expired)
+	credentials, err := c.GetTmpViewCredentials([]string{filePath}, expired)
 	if err != nil {
 		return "", err
 	}
