@@ -19,22 +19,23 @@ type Client struct {
 	secretID     string
 	secretKey    string
 	appID        string
-	bucket       string
+	bucketName   string
 	region       string
 	baseURL      *cos.BaseURL
 	scenes       map[SceneType]*Scene
 	contentTypes map[string]string
 }
 
-func New(secretID, secretKey, appID, bucket, region, bucketURL string) *Client {
+func New(secretID, secretKey, appID, bucket, region string) *Client {
+	var bucketName = fmt.Sprintf("%s-%s", bucket, appID)
 	var nClient = &Client{}
 	nClient.secretID = secretID
 	nClient.secretKey = secretKey
 	nClient.appID = appID
-	nClient.bucket = bucket
+	nClient.bucketName = bucketName
 	nClient.region = region
 
-	nBucketURL, err := url.Parse(bucketURL)
+	nBucketURL, err := cos.NewBucketURL(bucketName, region, true)
 	if err != nil {
 		panic(err)
 	}
@@ -62,26 +63,28 @@ func (c *Client) AppID() string {
 }
 
 func (c *Client) Bucket() string {
-	return c.bucket
+	return c.bucketName
 }
 
 func (c *Client) Region() string {
 	return c.region
 }
 
-func (c *Client) ContentType(ext string) string {
-	return c.contentTypes[ext]
+func (c *Client) ContentType(fileExt string) string {
+	return c.contentTypes[fileExt]
 }
 
-func (c *Client) AddScene(scene *Scene) {
+// RegisterScene 注册支持的业务场景类型
+func (c *Client) RegisterScene(scene *Scene) {
 	if scene != nil && scene.Path != "" && len(scene.FileExts) > 0 {
 		c.scenes[scene.SceneType] = scene
 	}
 }
 
-func (c *Client) AddContentType(fileType string, contentType string) {
-	if fileType != "" && contentType != "" {
-		c.contentTypes[fileType] = contentType
+// AllowContentType 设置支持上传的文件 Content-Type
+func (c *Client) AllowContentType(fileExt string, contentType string) {
+	if fileExt != "" && contentType != "" {
+		c.contentTypes[fileExt] = contentType
 	}
 }
 
@@ -92,7 +95,7 @@ func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []st
 	if len(contentTypes) < 1 {
 		return nil, errors.New("ContentType 不能为空")
 	}
-	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucket)
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucketName)
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
 		resourceList = append(resourceList, filepath.Join(base, resource))
@@ -134,7 +137,7 @@ func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statement
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
-	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucket)
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucketName)
 
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
