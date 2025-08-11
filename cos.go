@@ -26,7 +26,7 @@ type Client struct {
 	contentTypes map[string]string
 }
 
-func New(secretID, secretKey, appID, bucket, region string) *Client {
+func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
 	var bucketName = fmt.Sprintf("%s-%s", bucket, appID)
 	var nClient = &Client{}
 	nClient.secretID = secretID
@@ -37,13 +37,13 @@ func New(secretID, secretKey, appID, bucket, region string) *Client {
 
 	nBucketURL, err := cos.NewBucketURL(bucketName, region, true)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	nClient.baseURL = &cos.BaseURL{BucketURL: nBucketURL}
 
 	nClient.scenes = make(map[SceneType]*Scene)
 	nClient.contentTypes = make(map[string]string)
-	return nClient
+	return nClient, nil
 }
 
 func (c *Client) SecretID() string {
