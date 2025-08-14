@@ -258,7 +258,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 		return nil, err
 	}
 
-	filePath = c.trimSlash(filePath)
+	filePath = c.trimPrefixSlash(filePath)
 
 	// 获取临时上传密钥
 	credentials, err := c.GetTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
@@ -301,8 +301,8 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	return presignedInfo, nil
 }
 
-// trimSlash 去除路径开始的斜线
-func (c *Client) trimSlash(filePath string) string {
+// trimPrefixSlash 去除路径开始的斜线
+func (c *Client) trimPrefixSlash(filePath string) string {
 	filePath = path.Clean(filePath)
 	if filePath != "" && filePath[0] == '/' {
 		filePath = filePath[1:]
@@ -315,7 +315,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = c.trimSlash(filePath)
+	filePath = c.trimPrefixSlash(filePath)
 
 	if param == nil {
 		param = &url.Values{}
