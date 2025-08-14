@@ -10,6 +10,7 @@ import (
 	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -282,10 +283,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 		},
 	})
 
-	filePath = strings.ReplaceAll(filePath, "//", "/")
-	if strings.HasPrefix(filePath, "/") {
-		filePath = filePath[1:]
-	}
+	filePath = c.clean(filePath)
 
 	// 获取预签名 URL
 	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, filePath, secretID, secretKey, expired, opts)
@@ -303,15 +301,20 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	return presignedInfo, nil
 }
 
+func (c *Client) clean(filePath string) string {
+	filePath = path.Clean(filePath)
+	if filePath != "" && filePath[0] == '/' {
+		filePath = filePath[1:]
+	}
+	return filePath
+}
+
 // GetViewPresignedURL 获取访问文件预签名URL
 func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = strings.ReplaceAll(filePath, "//", "/")
-	if strings.HasPrefix(filePath, "/") {
-		filePath = filePath[1:]
-	}
+	filePath = c.clean(filePath)
 
 	if param == nil {
 		param = &url.Values{}
