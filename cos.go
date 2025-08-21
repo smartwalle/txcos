@@ -40,7 +40,13 @@ func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	nClient.baseURL = &cos.BaseURL{BucketURL: nBucketURL}
+	nClient.baseURL = &cos.BaseURL{
+		BucketURL:  nBucketURL,
+		ServiceURL: nBucketURL,
+		BatchURL:   nBucketURL,
+		CIURL:      nBucketURL,
+		FetchURL:   nBucketURL,
+	}
 
 	nClient.scenes = make(map[SceneType]*Scene)
 	nClient.contentTypes = make(map[string]string)
@@ -101,7 +107,7 @@ func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []st
 	for _, resource := range resources {
 		resourceList = append(resourceList, filepath.Join(base, resource))
 	}
-
+	// https://cloud.tencent.cn/document/product/598/69901
 	statements = []sts.CredentialPolicyStatement{
 		{
 			Action: []string{
@@ -144,6 +150,7 @@ func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statement
 	for _, resource := range resources {
 		resourceList = append(resourceList, filepath.Join(base, resource))
 	}
+	// https://cloud.tencent.cn/document/product/598/69901
 	statements = []sts.CredentialPolicyStatement{
 		{
 			Action: []string{
