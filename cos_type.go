@@ -11,7 +11,8 @@ type PresignedInfo struct {
 type SceneType int
 
 type Scene struct {
-	SceneType SceneType // 场景类型
-	Path      string    // 存储路径
-	FileExts  []string  // 支持文件类型(文件后缀，如 txt, png)
+	SceneType   SceneType // 场景类型
+	Path        string    // 存储路径
+	Extensions  []string  // 支持上传的文件类型(文件后缀，如 txt, png)
+	Attachments []string  // 需要作为附件响应的文件类型(文件后缀，如 txt)
 }
