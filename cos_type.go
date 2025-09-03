@@ -1,5 +1,13 @@
 package txcos
 
+// DispositionType 用于控制浏览器响应文件的方式
+type DispositionType int8
+
+const (
+	DispositionTypeDefault    = 0 // 不指定响应方式
+	DispositionTypeAttachment = 1 // 附件响应
+)
+
 // PresignedInfo 上传文件预签名信息
 type PresignedInfo struct {
 	UploadURL string            // 上传地址
@@ -14,5 +22,5 @@ type Scene struct {
 	SceneType   SceneType // 场景类型
 	Path        string    // 存储路径
 	Extensions  []string  // 支持上传的文件类型(文件后缀，如 txt, png)
-	Attachments []string  // 需要作为附件响应的文件类型(文件后缀，如 txt)
+	Attachments []string  // 必须作为附件响应的文件类型(文件后缀，如 txt)
 }

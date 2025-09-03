@@ -210,21 +210,21 @@ func (c *Client) getTmpViewCredentials(resources []string, expired time.Duration
 	return credential.Credentials, nil
 }
 
-// buildUploadFileInfo 构建待上传文件的COS路径、ContentType及是否以附件方式响应
-func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attached bool, err error) {
+// buildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
+func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
 	if filename == "" {
-		return "", "", attached, errors.New("文件名不能为空")
+		return "", "", attachment, errors.New("文件名不能为空")
 	}
 	var fileExt = filepath.Ext(filename)
 	if fileExt == "" {
-		return "", "", attached, errors.New("文件后缀不能为空")
+		return "", "", attachment, errors.New("文件后缀不能为空")
 	}
 	fileExt = strings.TrimPrefix(fileExt, ".")
 
 	// 获取文件场景
 	scene, ok := c.scenes[sceneType]
 	if !ok {
-		return "", "", attached, errors.New("文件场景不存在")
+		return "", "", attachment, errors.New("文件场景不存在")
 	}
 
 	// 验证是否为“文件场景”有效的文件类型
@@ -236,12 +236,12 @@ func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths
 		}
 	}
 	if !supportExt {
-		return "", "", attached, errors.New("不支持的文件类型")
+		return "", "", attachment, errors.New("不支持的文件类型")
 	}
 
 	for _, ext := range scene.Attachments {
 		if fileExt == ext {
-			attached = true
+			attachment = true
 			break
 		}
 	}
@@ -249,7 +249,7 @@ func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths
 	// 获取文件的 Content-Type
 	contentType = c.ContentType(fileExt)
 	if contentType == "" {
-		return "", "", attached, errors.New("未知的文件类型")
+		return "", "", attachment, errors.New("未知的文件类型")
 	}
 
 	// 构建待上传文件的COS路径
@@ -261,13 +261,13 @@ func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths
 
 	filePath = filepath.Join(newPaths...)
 
-	return filePath, contentType, attached, nil
+	return filePath, contentType, attachment, nil
 }
 
 // GetUploadPresignedInfo 获取上传文件预签名URL
-func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
+func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, attached, err := c.buildUploadFileInfo(sceneType, filename, paths...)
+	filePath, contentType, attachment, err := c.buildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 		Header:     &http.Header{},
 		SignMerged: true,
 	}
-	if attached {
+	if attachment || dispositionType == DispositionTypeAttachment {
 		opts.Header.Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	}
 	opts.Header.Add("Content-Type", contentType)
