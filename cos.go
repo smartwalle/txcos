@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+// Client COS  https://cloud.tencent.cn/document/api/436/7751
 type Client struct {
 	secretID     string
 	secretKey    string
