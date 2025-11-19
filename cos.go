@@ -177,7 +177,8 @@ func (c *Client) getViewCredentialPolicyStatement(resources []string) (statement
 	return statements, nil
 }
 
-func (c *Client) getTmpUploadCredentials(resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
+// GetTmpUploadCredentials 获取临时上传凭证
+func (c *Client) GetTmpUploadCredentials(resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	credentialPolicyStatementList, err := c.getUploadCredentialPolicyStatement(resources, contentTypes)
 	if err != nil {
 		return nil, err
@@ -199,7 +200,8 @@ func (c *Client) getTmpUploadCredentials(resources, contentTypes []string, expir
 	return credential.Credentials, nil
 }
 
-func (c *Client) getTmpViewCredentials(resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
+// GetTmpViewCredentials 获取临时访问凭证
+func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
 	credentialPolicyStatementList, err := c.getViewCredentialPolicyStatement(resources)
 	if err != nil {
 		return nil, err
@@ -221,8 +223,8 @@ func (c *Client) getTmpViewCredentials(resources []string, expired time.Duration
 	return credential.Credentials, nil
 }
 
-// buildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
-func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
+// BuildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
+func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
 	if filename == "" {
 		return "", "", attachment, errors.New("文件名不能为空")
 	}
@@ -278,7 +280,7 @@ func (c *Client) buildUploadFileInfo(sceneType SceneType, filename string, paths
 // GetUploadPresignedInfo 获取上传文件预签名URL
 func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, attachment, err := c.buildUploadFileInfo(sceneType, filename, paths...)
+	filePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +288,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	filePath = c.trimPrefixSlash(filePath)
 
 	// 获取临时上传密钥
-	credentials, err := c.getTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
+	credentials, err := c.GetTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +351,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	}
 
 	// 获取临时访问密钥
-	credentials, err := c.getTmpViewCredentials([]string{filePath}, expired)
+	credentials, err := c.GetTmpViewCredentials([]string{filePath}, expired)
 	if err != nil {
 		return "", err
 	}
