@@ -61,7 +61,6 @@ func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
 		},
 	})
 	nClient.stsClient = sts.NewClient(secretID, secretKey, nil)
-
 	return nClient, nil
 }
 
@@ -161,7 +160,7 @@ func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths
 	return filePath, contentType, attachment, nil
 }
 
-func (c *Client) getUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
+func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
@@ -206,7 +205,7 @@ func (c *Client) getUploadCredentialPolicyStatement(resources, contentTypes []st
 	return statements, nil
 }
 
-func (c *Client) getViewCredentialPolicyStatement(resources []string) (statements []sts.CredentialPolicyStatement, err error) {
+func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statements []sts.CredentialPolicyStatement, err error) {
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
@@ -232,7 +231,7 @@ func (c *Client) getViewCredentialPolicyStatement(resources []string) (statement
 
 // GetTmpUploadCredentials 获取临时上传凭证
 func (c *Client) GetTmpUploadCredentials(resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
-	credentialPolicyStatementList, err := c.getUploadCredentialPolicyStatement(resources, contentTypes)
+	credentialPolicyStatementList, err := c.GetUploadCredentialPolicyStatement(resources, contentTypes)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +254,7 @@ func (c *Client) GetTmpUploadCredentials(resources, contentTypes []string, expir
 
 // GetTmpViewCredentials 获取临时访问凭证
 func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
-	credentialPolicyStatementList, err := c.getViewCredentialPolicyStatement(resources)
+	credentialPolicyStatementList, err := c.GetViewCredentialPolicyStatement(resources)
 	if err != nil {
 		return nil, err
 	}
@@ -276,8 +275,8 @@ func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration
 	return credential.Credentials, nil
 }
 
-// GetUploadPresignedInfo 获取上传文件预签名URL
-func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
+// GetTmpUploadPresignedInfo 使用"临时凭证"获取上传文件预签名URL
+func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
 	filePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
@@ -329,8 +328,8 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	return presignedInfo, nil
 }
 
-// GetViewPresignedURL 获取访问文件预签名URL
-func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
+// GetTmpViewPresignedURL 使用"临时凭证"获取访问文件预签名URL
+func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
@@ -365,6 +364,68 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 
 	// 获取预签名 URL
 	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretID, secretKey, expired, opts)
+	if err != nil {
+		return "", err
+	}
+
+	return presignedURL.String(), nil
+}
+
+// GetUploadPresignedInfo 获取上传文件预签名URL
+func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
+	// 构建待上传文件的COS路径及ContentType
+	filePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	if err != nil {
+		return nil, err
+	}
+
+	filePath = TrimPrefixSlash(filePath)
+
+	var opts = &cos.PresignedURLOptions{
+		Query:      &url.Values{},
+		Header:     &http.Header{},
+		SignMerged: true,
+	}
+	if attachment || dispositionType == DispositionTypeAttachment {
+		opts.Header.Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	}
+	opts.Header.Add("Content-Type", contentType)
+
+	// 获取预签名 URL
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodPut, filePath, c.secretID, c.secretKey, expired, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	presignedInfo = &PresignedInfo{}
+	presignedInfo.UploadURL = presignedURL.String()
+	presignedInfo.FilePath = filePath
+	presignedInfo.Header = make(map[string]string)
+	for key := range *opts.Header {
+		presignedInfo.Header[key] = opts.Header.Get(key)
+	}
+	return presignedInfo, nil
+}
+
+// GetViewPresignedURL 获取访问文件预签名URL
+func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
+	if filePath == "" {
+		return "", errors.New("路径不能为空")
+	}
+	filePath = TrimPrefixSlash(filePath)
+
+	if param == nil {
+		param = &url.Values{}
+	}
+
+	var opts = &cos.PresignedURLOptions{
+		Query:      param,
+		Header:     &http.Header{},
+		SignMerged: true,
+	}
+
+	// 获取预签名 URL
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodGet, filePath, c.secretID, c.secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
