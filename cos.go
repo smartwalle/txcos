@@ -26,6 +26,9 @@ type Client struct {
 	baseURL      *cos.BaseURL
 	scenes       map[SceneType]*Scene
 	contentTypes map[string]string
+
+	client    *cos.Client
+	stsClient *sts.Client
 }
 
 func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
@@ -51,6 +54,15 @@ func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
 
 	nClient.scenes = make(map[SceneType]*Scene)
 	nClient.contentTypes = make(map[string]string)
+
+	nClient.client = cos.NewClient(nClient.baseURL, &http.Client{
+		Transport: &cos.AuthorizationTransport{
+			SecretID:  secretID,
+			SecretKey: secretKey,
+		},
+	})
+	nClient.stsClient = sts.NewClient(secretID, secretKey, nil)
+
 	return nClient, nil
 }
 
@@ -141,7 +153,7 @@ func (c *Client) getUploadCredentialPolicyStatement(resources, contentTypes []st
 	return statements, nil
 }
 
-func (c *Client) vetViewCredentialPolicyStatement(resources []string) (statements []sts.CredentialPolicyStatement, err error) {
+func (c *Client) getViewCredentialPolicyStatement(resources []string) (statements []sts.CredentialPolicyStatement, err error) {
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
@@ -166,7 +178,6 @@ func (c *Client) vetViewCredentialPolicyStatement(resources []string) (statement
 }
 
 func (c *Client) getTmpUploadCredentials(resources, contentTypes []string, expired time.Duration) (credentials *sts.Credentials, err error) {
-	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
 	credentialPolicyStatementList, err := c.getUploadCredentialPolicyStatement(resources, contentTypes)
 	if err != nil {
 		return nil, err
@@ -178,7 +189,7 @@ func (c *Client) getTmpUploadCredentials(resources, contentTypes []string, expir
 			Statement: credentialPolicyStatementList,
 		},
 	}
-	credential, err := stsClient.GetCredential(credentialOpts)
+	credential, err := c.stsClient.GetCredential(credentialOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +200,7 @@ func (c *Client) getTmpUploadCredentials(resources, contentTypes []string, expir
 }
 
 func (c *Client) getTmpViewCredentials(resources []string, expired time.Duration) (credentials *sts.Credentials, err error) {
-	stsClient := sts.NewClient(c.secretID, c.secretKey, nil)
-	credentialPolicyStatementList, err := c.vetViewCredentialPolicyStatement(resources)
+	credentialPolicyStatementList, err := c.getViewCredentialPolicyStatement(resources)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +211,7 @@ func (c *Client) getTmpViewCredentials(resources []string, expired time.Duration
 			Statement: credentialPolicyStatementList,
 		},
 	}
-	credential, err := stsClient.GetCredential(credentialOpts)
+	credential, err := c.stsClient.GetCredential(credentialOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +372,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	})
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretID, secretKey, time.Hour, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretID, secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
