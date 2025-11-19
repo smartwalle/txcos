@@ -10,7 +10,6 @@ import (
 	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
 	"net/http"
 	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -106,6 +105,60 @@ func (c *Client) AllowContentType(fileExt string, contentType string) {
 	if fileExt != "" && contentType != "" {
 		c.contentTypes[fileExt] = contentType
 	}
+}
+
+// BuildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
+func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
+	if filename == "" {
+		return "", "", attachment, errors.New("文件名不能为空")
+	}
+	var fileExt = filepath.Ext(filename)
+	if fileExt == "" {
+		return "", "", attachment, errors.New("文件后缀不能为空")
+	}
+	fileExt = strings.TrimPrefix(fileExt, ".")
+
+	// 获取文件场景
+	scene, ok := c.scenes[sceneType]
+	if !ok {
+		return "", "", attachment, errors.New("文件场景不存在")
+	}
+
+	// 验证是否为“文件场景”有效的文件类型
+	var supportExt = false
+	for _, ext := range scene.Extensions {
+		if fileExt == ext {
+			supportExt = true
+			break
+		}
+	}
+	if !supportExt {
+		return "", "", attachment, errors.New("不支持的文件类型")
+	}
+
+	for _, ext := range scene.Attachments {
+		if fileExt == ext {
+			attachment = true
+			break
+		}
+	}
+
+	// 获取文件的 Content-Type
+	contentType = c.ContentType(fileExt)
+	if contentType == "" {
+		return "", "", attachment, errors.New("未知的文件类型")
+	}
+
+	// 构建待上传文件的COS路径
+	var newPaths = make([]string, 0, len(paths)+3)
+	newPaths = append(newPaths, "/")
+	newPaths = append(newPaths, scene.Path)
+	newPaths = append(newPaths, paths...)
+	newPaths = append(newPaths, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), time.Now().UnixNano(), fileExt))
+
+	filePath = filepath.Join(newPaths...)
+
+	return filePath, contentType, attachment, nil
 }
 
 func (c *Client) getUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
@@ -223,60 +276,6 @@ func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration
 	return credential.Credentials, nil
 }
 
-// BuildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
-func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
-	if filename == "" {
-		return "", "", attachment, errors.New("文件名不能为空")
-	}
-	var fileExt = filepath.Ext(filename)
-	if fileExt == "" {
-		return "", "", attachment, errors.New("文件后缀不能为空")
-	}
-	fileExt = strings.TrimPrefix(fileExt, ".")
-
-	// 获取文件场景
-	scene, ok := c.scenes[sceneType]
-	if !ok {
-		return "", "", attachment, errors.New("文件场景不存在")
-	}
-
-	// 验证是否为“文件场景”有效的文件类型
-	var supportExt = false
-	for _, ext := range scene.Extensions {
-		if fileExt == ext {
-			supportExt = true
-			break
-		}
-	}
-	if !supportExt {
-		return "", "", attachment, errors.New("不支持的文件类型")
-	}
-
-	for _, ext := range scene.Attachments {
-		if fileExt == ext {
-			attachment = true
-			break
-		}
-	}
-
-	// 获取文件的 Content-Type
-	contentType = c.ContentType(fileExt)
-	if contentType == "" {
-		return "", "", attachment, errors.New("未知的文件类型")
-	}
-
-	// 构建待上传文件的COS路径
-	var newPaths = make([]string, 0, len(paths)+3)
-	newPaths = append(newPaths, "/")
-	newPaths = append(newPaths, scene.Path)
-	newPaths = append(newPaths, paths...)
-	newPaths = append(newPaths, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), time.Now().UnixNano(), fileExt))
-
-	filePath = filepath.Join(newPaths...)
-
-	return filePath, contentType, attachment, nil
-}
-
 // GetUploadPresignedInfo 获取上传文件预签名URL
 func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
@@ -285,7 +284,7 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 		return nil, err
 	}
 
-	filePath = c.trimPrefixSlash(filePath)
+	filePath = TrimPrefixSlash(filePath)
 
 	// 获取临时上传密钥
 	credentials, err := c.GetTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
@@ -330,21 +329,12 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	return presignedInfo, nil
 }
 
-// trimPrefixSlash 去除路径开始的斜线
-func (c *Client) trimPrefixSlash(filePath string) string {
-	filePath = path.Clean(filePath)
-	if filePath != "" && filePath[0] == '/' {
-		filePath = filePath[1:]
-	}
-	return filePath
-}
-
 // GetViewPresignedURL 获取访问文件预签名URL
 func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = c.trimPrefixSlash(filePath)
+	filePath = TrimPrefixSlash(filePath)
 
 	if param == nil {
 		param = &url.Values{}
