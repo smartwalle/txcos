@@ -5,22 +5,25 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/tencentyun/cos-go-sdk-v5"
-	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
+	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/tencentyun/cos-go-sdk-v5"
+	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
 )
 
 // Client COS  https://cloud.tencent.cn/document/api/436/7751
 type Client struct {
-	secretID     string
+	secretId     string
 	secretKey    string
-	appID        string
-	bucketName   string
+	appId        string
+	bucket       string
 	region       string
 	baseURL      *cos.BaseURL
 	scenes       map[SceneType]*Scene
@@ -30,16 +33,20 @@ type Client struct {
 	stsClient *sts.Client
 }
 
-func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
-	var bucketName = fmt.Sprintf("%s-%s", bucket, appID)
+func New(secretId, secretKey, bucket, region string) (*Client, error) {
+	appId, err := decodeAppIdFromBucket(bucket)
+	if err != nil {
+		return nil, err
+	}
+
 	var nClient = &Client{}
-	nClient.secretID = secretID
+	nClient.secretId = secretId
 	nClient.secretKey = secretKey
-	nClient.appID = appID
-	nClient.bucketName = bucketName
+	nClient.appId = appId
+	nClient.bucket = bucket
 	nClient.region = region
 
-	nBucketURL, err := cos.NewBucketURL(bucketName, region, true)
+	nBucketURL, err := cos.NewBucketURL(bucket, region, true)
 	if err != nil {
 		return nil, err
 	}
@@ -56,16 +63,16 @@ func New(secretID, secretKey, appID, bucket, region string) (*Client, error) {
 
 	nClient.client = cos.NewClient(nClient.baseURL, &http.Client{
 		Transport: &cos.AuthorizationTransport{
-			SecretID:  secretID,
+			SecretID:  secretId,
 			SecretKey: secretKey,
 		},
 	})
-	nClient.stsClient = sts.NewClient(secretID, secretKey, nil)
+	nClient.stsClient = sts.NewClient(secretId, secretKey, nil)
 	return nClient, nil
 }
 
 func (c *Client) SecretID() string {
-	return c.secretID
+	return c.secretId
 }
 
 func (c *Client) SecretKey() string {
@@ -77,11 +84,11 @@ func (c *Client) BaseURL() *cos.BaseURL {
 }
 
 func (c *Client) AppID() string {
-	return c.appID
+	return c.appId
 }
 
 func (c *Client) Bucket() string {
-	return c.bucketName
+	return c.bucket
 }
 
 func (c *Client) Region() string {
@@ -157,7 +164,7 @@ func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths
 
 	filePath = filepath.Join(newPaths...)
 
-	return filePath, contentType, attachment, nil
+	return trimPrefixSlash(filePath), contentType, attachment, nil
 }
 
 func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
@@ -167,7 +174,7 @@ func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []st
 	if len(contentTypes) < 1 {
 		return nil, errors.New("ContentType 不能为空")
 	}
-	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucketName)
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appId, c.bucket)
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
 		resourceList = append(resourceList, filepath.Join(base, resource))
@@ -209,7 +216,7 @@ func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statement
 	if len(resources) < 1 {
 		return nil, errors.New("资源路径不能为空")
 	}
-	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appID, c.bucketName)
+	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appId, c.bucket)
 
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
@@ -278,15 +285,13 @@ func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration
 // GetTmpUploadPresignedInfo 使用"临时凭证"获取上传文件预签名URL
 func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
 
-	filePath = TrimPrefixSlash(filePath)
-
 	// 获取临时上传密钥
-	credentials, err := c.GetTmpUploadCredentials([]string{filePath}, []string{contentType}, expired)
+	credentials, err := c.GetTmpUploadCredentials([]string{uploadFilePath}, []string{contentType}, expired)
 	if err != nil {
 		return nil, err
 	}
@@ -302,25 +307,25 @@ func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneT
 	opts.Header.Add("Content-Type", contentType)
 	opts.Query.Add("x-cos-security-token", credentials.SessionToken)
 
-	var secretID = credentials.TmpSecretID
+	var secretId = credentials.TmpSecretID
 	var secretKey = credentials.TmpSecretKey
 
 	var cosClient = cos.NewClient(c.baseURL, &http.Client{
 		Transport: &cos.AuthorizationTransport{
-			SecretID:  secretID,
+			SecretID:  secretId,
 			SecretKey: secretKey,
 		},
 	})
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, filePath, secretID, secretKey, expired, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilePath, secretId, secretKey, expired, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	presignedInfo = &PresignedInfo{}
 	presignedInfo.UploadURL = presignedURL.String()
-	presignedInfo.FilePath = filePath
+	presignedInfo.FilePath = uploadFilePath
 	presignedInfo.Header = make(map[string]string)
 	for key := range *opts.Header {
 		presignedInfo.Header[key] = opts.Header.Get(key)
@@ -333,7 +338,7 @@ func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, pa
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = TrimPrefixSlash(filePath)
+	filePath = trimPrefixSlash(filePath)
 
 	if param == nil {
 		param = &url.Values{}
@@ -352,18 +357,18 @@ func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, pa
 	}
 	opts.Query.Set("x-cos-security-token", credentials.SessionToken)
 
-	var secretID = credentials.TmpSecretID
+	var secretId = credentials.TmpSecretID
 	var secretKey = credentials.TmpSecretKey
 
 	var cosClient = cos.NewClient(c.baseURL, &http.Client{
 		Transport: &cos.AuthorizationTransport{
-			SecretID:  secretID,
+			SecretID:  secretId,
 			SecretKey: secretKey,
 		},
 	})
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretID, secretKey, expired, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretId, secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
@@ -374,12 +379,10 @@ func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, pa
 // GetUploadPresignedInfo 获取上传文件预签名URL
 func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	filePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
-
-	filePath = TrimPrefixSlash(filePath)
 
 	var opts = &cos.PresignedURLOptions{
 		Query:      &url.Values{},
@@ -392,14 +395,14 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	opts.Header.Add("Content-Type", contentType)
 
 	// 获取预签名 URL
-	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodPut, filePath, c.secretID, c.secretKey, expired, opts)
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilePath, c.secretId, c.secretKey, expired, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	presignedInfo = &PresignedInfo{}
 	presignedInfo.UploadURL = presignedURL.String()
-	presignedInfo.FilePath = filePath
+	presignedInfo.FilePath = uploadFilePath
 	presignedInfo.Header = make(map[string]string)
 	for key := range *opts.Header {
 		presignedInfo.Header[key] = opts.Header.Get(key)
@@ -412,7 +415,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	if filePath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = TrimPrefixSlash(filePath)
+	filePath = trimPrefixSlash(filePath)
 
 	if param == nil {
 		param = &url.Values{}
@@ -425,7 +428,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	}
 
 	// 获取预签名 URL
-	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodGet, filePath, c.secretID, c.secretKey, expired, opts)
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodGet, filePath, c.secretId, c.secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
@@ -460,4 +463,89 @@ func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.D
 		return "", err
 	}
 	return fileURL, nil
+}
+
+// PutFromObject 上传对象
+//
+// sceneType 场景类型
+//
+// dispositionType 响应文件的方式
+//
+// filename 下载保存文件名
+//
+// reader 待上传对象
+func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, object io.Reader, paths ...string) (string, error) {
+	// 构建待上传文件的COS路径及ContentType
+	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	if err != nil {
+		return "", err
+	}
+
+	var opts = &cos.ObjectPutOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{},
+	}
+
+	if attachment || dispositionType == DispositionTypeAttachment {
+		opts.ObjectPutHeaderOptions.ContentDisposition = fmt.Sprintf("attachment; filename=%s", filename)
+		opts.ObjectPutHeaderOptions.ContentType = contentType
+	}
+
+	if _, err = c.client.Object.Put(ctx, uploadFilePath, object, opts); err != nil {
+		return "", err
+	}
+	return uploadFilePath, nil
+}
+
+// PutFromFile 上传文件
+//
+// sceneType 场景类型
+//
+// dispositionType 响应文件的方式
+//
+// filePath 待上传本地文件
+func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filePath string, paths ...string) (string, error) {
+	var filename = filepath.Base(filePath)
+	// 构建待上传文件的COS路径及ContentType
+	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	if err != nil {
+		return "", err
+	}
+
+	var opts = &cos.ObjectPutOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{},
+	}
+
+	if attachment || dispositionType == DispositionTypeAttachment {
+		opts.ObjectPutHeaderOptions.ContentDisposition = fmt.Sprintf("attachment; filename=%s", filename)
+		opts.ObjectPutHeaderOptions.ContentType = contentType
+	}
+
+	if _, err = c.client.Object.PutFromFile(ctx, uploadFilePath, filePath, opts); err != nil {
+		return "", err
+	}
+	return uploadFilePath, nil
+}
+
+func decodeAppIdFromBucket(bucket string) (string, error) {
+	index := strings.LastIndex(bucket, "-")
+	if index < 0 || index == len(bucket)-1 {
+		return "", fmt.Errorf("bucket %q 缺少 appId", bucket)
+	}
+
+	appId := bucket[index+1:]
+	for _, char := range appId {
+		if char < '0' || char > '9' {
+			return "", fmt.Errorf("bucket %q 的 appId 无效", bucket)
+		}
+	}
+	return appId, nil
+}
+
+// trimPrefixSlash 去除路径开始的斜线
+func trimPrefixSlash(filePath string) string {
+	filePath = path.Clean(filePath)
+	if filePath != "" && filePath[0] == '/' {
+		filePath = filePath[1:]
+	}
+	return filePath
 }
