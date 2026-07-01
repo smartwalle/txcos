@@ -71,7 +71,7 @@ func New(secretId, secretKey, bucket, region string) (*Client, error) {
 	return nClient, nil
 }
 
-func (c *Client) SecretID() string {
+func (c *Client) SecretId() string {
 	return c.secretId
 }
 
@@ -83,7 +83,7 @@ func (c *Client) BaseURL() *cos.BaseURL {
 	return c.baseURL
 }
 
-func (c *Client) AppID() string {
+func (c *Client) AppId() string {
 	return c.appId
 }
 
