@@ -71,6 +71,10 @@ func New(secretId, secretKey, bucket, region string) (*Client, error) {
 	return nClient, nil
 }
 
+func (c *Client) Client() *cos.Client {
+	return c.client
+}
+
 func (c *Client) SecretId() string {
 	return c.secretId
 }
@@ -465,7 +469,7 @@ func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.D
 	return fileURL, nil
 }
 
-// PutFromObject 上传对象
+// PutFromReader 从 Reader 上传文件
 //
 // sceneType 场景类型
 //
@@ -473,8 +477,8 @@ func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.D
 //
 // filename 下载保存文件名
 //
-// object 待上传对象
-func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, object io.Reader, paths ...string) (string, error) {
+// reader 待上传内容
+func (c *Client) PutFromReader(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, reader io.Reader, paths ...string) (string, error) {
 	// 构建待上传文件的COS路径及ContentType
 	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
@@ -490,7 +494,7 @@ func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, disposi
 		opts.ObjectPutHeaderOptions.ContentType = contentType
 	}
 
-	if _, err = c.client.Object.Put(ctx, uploadFilepath, object, opts); err != nil {
+	if _, err = c.client.Object.Put(ctx, uploadFilepath, reader, opts); err != nil {
 		return "", err
 	}
 	return uploadFilepath, nil
