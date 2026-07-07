@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"path/filepath"
+	stdfilepath "path/filepath"
 	"strings"
 	"time"
 
@@ -114,11 +114,11 @@ func (c *Client) AllowContentType(fileExt string, contentType string) {
 }
 
 // BuildUploadFileInfo 构建待上传文件的COS路径、ContentType以及是否必须以附件方式响应
-func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filePath, contentType string, attachment bool, err error) {
+func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths ...string) (filepath, contentType string, attachment bool, err error) {
 	if filename == "" {
 		return "", "", attachment, errors.New("文件名不能为空")
 	}
-	var fileExt = filepath.Ext(filename)
+	var fileExt = stdfilepath.Ext(filename)
 	if fileExt == "" {
 		return "", "", attachment, errors.New("文件后缀不能为空")
 	}
@@ -160,11 +160,11 @@ func (c *Client) BuildUploadFileInfo(sceneType SceneType, filename string, paths
 	newPaths = append(newPaths, "/")
 	newPaths = append(newPaths, scene.Path)
 	newPaths = append(newPaths, paths...)
-	newPaths = append(newPaths, fmt.Sprintf("%s_%d.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), time.Now().UnixNano(), fileExt))
+	newPaths = append(newPaths, fmt.Sprintf("%s.%s", base64.URLEncoding.EncodeToString([]byte(uuid.New().String()+filename)), fileExt))
 
-	filePath = filepath.Join(newPaths...)
+	filepath = stdfilepath.Join(newPaths...)
 
-	return trimPrefixSlash(filePath), contentType, attachment, nil
+	return trimPrefixSlash(filepath), contentType, attachment, nil
 }
 
 func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []string) (statements []sts.CredentialPolicyStatement, err error) {
@@ -177,7 +177,7 @@ func (c *Client) GetUploadCredentialPolicyStatement(resources, contentTypes []st
 	var base = fmt.Sprintf("qcs::cos:%s:uid/%s:%s", c.region, c.appId, c.bucket)
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
-		resourceList = append(resourceList, filepath.Join(base, resource))
+		resourceList = append(resourceList, stdfilepath.Join(base, resource))
 	}
 	// https://cloud.tencent.cn/document/product/598/69901
 	statements = []sts.CredentialPolicyStatement{
@@ -220,7 +220,7 @@ func (c *Client) GetViewCredentialPolicyStatement(resources []string) (statement
 
 	var resourceList = make([]string, 0, len(resources))
 	for _, resource := range resources {
-		resourceList = append(resourceList, filepath.Join(base, resource))
+		resourceList = append(resourceList, stdfilepath.Join(base, resource))
 	}
 	// https://cloud.tencent.cn/document/product/598/69901
 	statements = []sts.CredentialPolicyStatement{
@@ -334,18 +334,18 @@ func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneT
 }
 
 // GetTmpViewPresignedURL 使用"临时凭证"获取访问文件预签名URL
-func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
-	if filePath == "" {
+func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filepath string, param *url.Values, expired time.Duration) (string, error) {
+	if filepath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = trimPrefixSlash(filePath)
+	filepath = trimPrefixSlash(filepath)
 
 	if param == nil {
 		param = &url.Values{}
 	}
 
 	// 获取临时访问密钥
-	credentials, err := c.GetTmpViewCredentials([]string{filePath}, expired)
+	credentials, err := c.GetTmpViewCredentials([]string{filepath}, expired)
 	if err != nil {
 		return "", err
 	}
@@ -368,7 +368,7 @@ func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filePath string, pa
 	})
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filePath, secretId, secretKey, expired, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodGet, filepath, secretId, secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
@@ -411,11 +411,11 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 }
 
 // GetViewPresignedURL 获取访问文件预签名URL
-func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param *url.Values, expired time.Duration) (string, error) {
-	if filePath == "" {
+func (c *Client) GetViewPresignedURL(ctx context.Context, filepath string, param *url.Values, expired time.Duration) (string, error) {
+	if filepath == "" {
 		return "", errors.New("路径不能为空")
 	}
-	filePath = trimPrefixSlash(filePath)
+	filepath = trimPrefixSlash(filepath)
 
 	if param == nil {
 		param = &url.Values{}
@@ -428,7 +428,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 	}
 
 	// 获取预签名 URL
-	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodGet, filePath, c.secretId, c.secretKey, expired, opts)
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodGet, filepath, c.secretId, c.secretKey, expired, opts)
 	if err != nil {
 		return "", err
 	}
@@ -437,7 +437,7 @@ func (c *Client) GetViewPresignedURL(ctx context.Context, filePath string, param
 }
 
 // GetPreviewFileURL 获取文件预览URL
-func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string, expired time.Duration) (string, error) {
+func (c *Client) GetPreviewFileURL(ctx context.Context, filepath string, expired time.Duration) (string, error) {
 	var param = &url.Values{}
 	param.Add("ci-process", "doc-preview")
 	param.Add("dstType", "html")
@@ -449,7 +449,7 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filePath string, expired
 	param.Add("htmlhorizontal", "100")
 	param.Add("htmlvertical", "100")
 
-	fileURL, err := c.GetViewPresignedURL(ctx, filePath, param, expired)
+	fileURL, err := c.GetViewPresignedURL(ctx, filepath, param, expired)
 	if err != nil {
 		return "", err
 	}
@@ -503,8 +503,8 @@ func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, disposi
 // dispositionType 响应文件的方式
 //
 // filePath 待上传本地文件
-func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filePath string, paths ...string) (string, error) {
-	var filename = filepath.Base(filePath)
+func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filepath string, paths ...string) (string, error) {
+	var filename = stdfilepath.Base(filepath)
 	// 构建待上传文件的COS路径及ContentType
 	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
@@ -520,7 +520,7 @@ func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositi
 		opts.ObjectPutHeaderOptions.ContentType = contentType
 	}
 
-	if _, err = c.client.Object.PutFromFile(ctx, uploadFilePath, filePath, opts); err != nil {
+	if _, err = c.client.Object.PutFromFile(ctx, uploadFilePath, filepath, opts); err != nil {
 		return "", err
 	}
 	return uploadFilePath, nil
