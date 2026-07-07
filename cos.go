@@ -461,8 +461,8 @@ func (c *Client) GetPreviewFileURL(ctx context.Context, filepath string, expired
 }
 
 // GetFileURL 获取文件访问URL
-func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.Duration) (string, error) {
-	fileURL, err := c.GetViewPresignedURL(ctx, filePath, &url.Values{}, expired)
+func (c *Client) GetFileURL(ctx context.Context, filepath string, expired time.Duration) (string, error) {
+	fileURL, err := c.GetViewPresignedURL(ctx, filepath, &url.Values{}, expired)
 	if err != nil {
 		return "", err
 	}
@@ -506,7 +506,7 @@ func (c *Client) PutFromReader(ctx context.Context, sceneType SceneType, disposi
 //
 // dispositionType 响应文件的方式
 //
-// filePath 待上传本地文件
+// filepath 待上传本地文件
 func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filepath string, paths ...string) (string, error) {
 	var filename = stdfilepath.Base(filepath)
 	// 构建待上传文件的COS路径及ContentType
@@ -546,10 +546,10 @@ func decodeAppIdFromBucket(bucket string) (string, error) {
 }
 
 // trimPrefixSlash 去除路径开始的斜线
-func trimPrefixSlash(filePath string) string {
-	filePath = path.Clean(filePath)
-	if filePath != "" && filePath[0] == '/' {
-		filePath = filePath[1:]
+func trimPrefixSlash(filepath string) string {
+	filepath = path.Clean(filepath)
+	if filepath != "" && filepath[0] == '/' {
+		filepath = filepath[1:]
 	}
-	return filePath
+	return filepath
 }
