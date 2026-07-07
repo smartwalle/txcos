@@ -473,7 +473,7 @@ func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.D
 //
 // filename 下载保存文件名
 //
-// reader 待上传对象
+// object 待上传对象
 func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, object io.Reader, paths ...string) (string, error) {
 	// 构建待上传文件的COS路径及ContentType
 	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
