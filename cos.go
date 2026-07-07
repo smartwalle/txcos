@@ -285,13 +285,13 @@ func (c *Client) GetTmpViewCredentials(resources []string, expired time.Duration
 // GetTmpUploadPresignedInfo 使用"临时凭证"获取上传文件预签名URL
 func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
 
 	// 获取临时上传密钥
-	credentials, err := c.GetTmpUploadCredentials([]string{uploadFilePath}, []string{contentType}, expired)
+	credentials, err := c.GetTmpUploadCredentials([]string{uploadFilepath}, []string{contentType}, expired)
 	if err != nil {
 		return nil, err
 	}
@@ -318,14 +318,14 @@ func (c *Client) GetTmpUploadPresignedInfo(ctx context.Context, sceneType SceneT
 	})
 
 	// 获取预签名 URL
-	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilePath, secretId, secretKey, expired, opts)
+	presignedURL, err := cosClient.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilepath, secretId, secretKey, expired, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	presignedInfo = &PresignedInfo{}
 	presignedInfo.UploadURL = presignedURL.String()
-	presignedInfo.FilePath = uploadFilePath
+	presignedInfo.FilePath = uploadFilepath
 	presignedInfo.Header = make(map[string]string)
 	for key := range *opts.Header {
 		presignedInfo.Header[key] = opts.Header.Get(key)
@@ -379,7 +379,7 @@ func (c *Client) GetTmpViewPresignedURL(ctx context.Context, filepath string, pa
 // GetUploadPresignedInfo 获取上传文件预签名URL
 func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, expired time.Duration, paths ...string) (presignedInfo *PresignedInfo, err error) {
 	// 构建待上传文件的COS路径及ContentType
-	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return nil, err
 	}
@@ -395,14 +395,14 @@ func (c *Client) GetUploadPresignedInfo(ctx context.Context, sceneType SceneType
 	opts.Header.Add("Content-Type", contentType)
 
 	// 获取预签名 URL
-	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilePath, c.secretId, c.secretKey, expired, opts)
+	presignedURL, err := c.client.Object.GetPresignedURL(ctx, http.MethodPut, uploadFilepath, c.secretId, c.secretKey, expired, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	presignedInfo = &PresignedInfo{}
 	presignedInfo.UploadURL = presignedURL.String()
-	presignedInfo.FilePath = uploadFilePath
+	presignedInfo.FilePath = uploadFilepath
 	presignedInfo.Header = make(map[string]string)
 	for key := range *opts.Header {
 		presignedInfo.Header[key] = opts.Header.Get(key)
@@ -476,7 +476,7 @@ func (c *Client) GetFileURL(ctx context.Context, filePath string, expired time.D
 // reader 待上传对象
 func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filename string, object io.Reader, paths ...string) (string, error) {
 	// 构建待上传文件的COS路径及ContentType
-	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return "", err
 	}
@@ -490,10 +490,10 @@ func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, disposi
 		opts.ObjectPutHeaderOptions.ContentType = contentType
 	}
 
-	if _, err = c.client.Object.Put(ctx, uploadFilePath, object, opts); err != nil {
+	if _, err = c.client.Object.Put(ctx, uploadFilepath, object, opts); err != nil {
 		return "", err
 	}
-	return uploadFilePath, nil
+	return uploadFilepath, nil
 }
 
 // PutFromFile 上传文件
@@ -506,7 +506,7 @@ func (c *Client) PutFromObject(ctx context.Context, sceneType SceneType, disposi
 func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositionType DispositionType, filepath string, paths ...string) (string, error) {
 	var filename = stdfilepath.Base(filepath)
 	// 构建待上传文件的COS路径及ContentType
-	uploadFilePath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
+	uploadFilepath, contentType, attachment, err := c.BuildUploadFileInfo(sceneType, filename, paths...)
 	if err != nil {
 		return "", err
 	}
@@ -520,10 +520,10 @@ func (c *Client) PutFromFile(ctx context.Context, sceneType SceneType, dispositi
 		opts.ObjectPutHeaderOptions.ContentType = contentType
 	}
 
-	if _, err = c.client.Object.PutFromFile(ctx, uploadFilePath, filepath, opts); err != nil {
+	if _, err = c.client.Object.PutFromFile(ctx, uploadFilepath, filepath, opts); err != nil {
 		return "", err
 	}
-	return uploadFilePath, nil
+	return uploadFilepath, nil
 }
 
 func decodeAppIdFromBucket(bucket string) (string, error) {
